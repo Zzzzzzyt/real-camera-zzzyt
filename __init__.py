@@ -3,11 +3,11 @@ bl_info = {
     "name": "Real Camera",
     "description": "Physical Camera Controls",
     "author": "Wolf",
-    "version": (2, 0),
+    "version": (2, 1),
     "blender": (2, 78, 0),
     "location": "Properties > Camera",
-    "wiki_url": "http://3dwolf.weebly.com/camera.html",
-    "tracker_url": "http://3dwolf.weebly.com/camera.html",
+    "wiki_url": "http://www.3d-wolf.com/camera.html",
+    "tracker_url": "http://www.3d-wolf.com/camera.html",
     "support": "COMMUNITY",
     "category": "Render"
     }
@@ -36,7 +36,7 @@ class RealCameraPanel(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.scene.render.engine == 'CYCLES'
+        return context.camera and context.scene.render.engine == 'CYCLES'
 
     def draw_header(self, context):
         settings = context.scene.camera_settings
@@ -56,7 +56,7 @@ class RealCameraPanel(bpy.types.Panel):
             row.prop(settings, 'ev')
             row = layout.row()
             row.scale_y = 1.5
-            row.operator("wm.url_open", text="Chart", icon='IMAGEFILE').url = "https://drive.google.com/open?id=1sxBGgrsAmND6WOYdvB8q7f5l3JEpbAQ_uHqQaO4tSI0"
+            row.operator("wm.url_open", text="Chart", icon='IMAGEFILE').url = "https://drive.google.com/open?id=1p0YmKZp-6n1nqBO5xNmbhCAMoZOTHi_83Zx5B4uubmo"
         else:
             split = layout.split()
             col = split.column(align=True)
