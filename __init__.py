@@ -18,6 +18,7 @@ import bpy
 import math
 from bpy.props import *
 from mathutils import Vector
+from bpy.app.handlers import persistent
 from . import addon_updater_ops
 
 
@@ -198,6 +199,8 @@ def update_af_bake(self, context):
 	scene.frame_current = current_frame
 
 
+# Handler
+@persistent
 def camera_handler(scene):
 	settings = bpy.context.scene.camera_settings
 	if not settings.af_bake:
@@ -362,6 +365,7 @@ def unregister():
 	bpy.utils.unregister_class(RealCameraPreferences)
 	bpy.utils.unregister_module(__name__)
 	del bpy.types.Scene.camera_settings
+	bpy.app.handlers.frame_change_post.remove(camera_handler)
 
 if __name__ == "__main__":
     register()
