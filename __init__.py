@@ -108,6 +108,10 @@ class AUTOEXP_PT_Panel(Panel):
 		row.alignment = "CENTER"
 		row.prop(settings, 'ae_mode', expand=True)
 		col.label(text="")
+		layout.use_property_split = True
+		layout.use_property_decorate = False
+		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
+		col = flow.column()
 		col.prop(settings, 'ec', slider=True)
 		
 
@@ -524,7 +528,7 @@ class CameraSettings(PropertyGroup):
 
 	# Exposure Compensation
 	ec : bpy.props.FloatProperty(
-		name = "Exposure",
+		name = "EV Compensation",
 		description = "Exposure Compensation value: add or subtract brightness",
 		min = -3,
 		max = 3,
