@@ -107,21 +107,9 @@ class AUTOEXP_PT_Panel(Panel):
 		row.scale_y = 1.5
 		row.alignment = "CENTER"
 		row.prop(settings, 'ae_mode', expand=True)
-		row = col.row(align=True)
-		row.alignment = "CENTER"
-		row.label(text=ae_description(self, context))
 		col.label(text="")
-
-
-# Description of ae mode
-def ae_description(self, context):
-	mode = context.scene.camera_settings.ae_mode
-	if mode=="Center Spot":
-		return "Sample the pixel in the center of the window"
-	elif mode=="Center Weighted":
-		return "Sample a grid of pixels and give more weight to the center ones"
-	elif mode=="Full Window":
-		return "Sample a grid of pixels along the whole window"
+		col.prop(settings, 'ec', slider=True)
+		
 
 
 # Enable camera
@@ -248,18 +236,14 @@ def update_ae(self, context):
 	global handle
 	if ae:
 		handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'PRE_VIEW')
-		bpy.app.timers.register(timer)
 	else:
 		bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
-		bpy.app.timers.unregister(timer)
 
 
 # Auto Exposure algorithms
 def ae_calc():
 	shading = bpy.context.area.spaces.active.shading.type
-	global flag
-	if shading=="RENDERED" and flag:
-		flag = False
+	if shading=="RENDERED":
 		settings = bpy.context.scene.camera_settings
 		# width and height of the viewport
 		viewport = bgl.Buffer(bgl.GL_INT, 4)
@@ -292,7 +276,7 @@ def ae_calc():
 
 		# Center Weighted
 		if settings.ae_mode=="Center Weighted":
-			circles = 3
+			circles = 4
 			if width>=height:
 				max = width
 			else:
@@ -333,20 +317,30 @@ def ae_calc():
 
 			avg = values/weights
 
-		# Measure scene referred value and change the exposure value
-		s_curve = s_calculation(avg)
-		log = math.pow(2, (16.5*s_curve-12.47393))
-		ev = bpy.context.scene.view_settings.exposure
-		scene = log/(math.pow(2, ev))
-		exposure = -math.log2(scene/0.18)
+		ec = bpy.context.scene.camera_settings.ec
+		if ec!=0:
+			middle = 0.18*math.pow(2, ec)
+			log = (math.log2(middle/0.18)+10)/16.5
+			s = s_calc(log)
+			avg_min = s-0.01
+			avg_max = s+0.01
+		else:
+			avg_min = 0.49
+			avg_max = 0.51
+			middle = 0.18
 		print("average: ", avg)
-		print("scene: ", scene)
-		print("")
-		bpy.context.scene.view_settings.exposure = exposure/2
+		if not (avg>avg_min and avg<avg_max):
+			# Measure scene referred value and change the exposure value
+			s_curve = s_calculation(avg)
+			log = math.pow(2, (16.5*s_curve-12.47393))
+			past = bpy.context.scene.view_settings.exposure
+			scene = log/(math.pow(2, past))
+			future = -math.log2(scene/middle)
+			exposure = past-((past-future)/5)
+			bpy.context.scene.view_settings.exposure = exposure
 
 
 # Global values
-flag = True
 handle = ()
 path = os.path.join(os.path.dirname(__file__), "looks/")
 filmic_vhc = read_filmic_values(path + "Very High Contrast")
@@ -359,6 +353,31 @@ filmic_vlc = read_filmic_values(path + "Very Low Contrast")
 
 
 # Calculate value after filmic log
+def s_calc(log):
+	look = bpy.context.scene.view_settings.look
+	if look=="None":
+		filmic = filmic_bc
+	elif look=="Filmic - Very High Contrast":
+		filmic = filmic_vhc
+	elif look=="Filmic - High Contrast":
+		filmic = filmic_hc
+	elif look=="Filmic - Medium High Contrast":
+		filmic = filmic_mhc
+	elif look=="Filmic - Base Contrast":
+		filmic = filmic_bc
+	elif look=="Filmic - Medium Low Contrast":
+		filmic = filmic_mlc
+	elif look=="Filmic - Low Contrast":
+		filmic = filmic_lc
+	elif look=="Filmic - Very Low Contrast":
+		filmic = filmic_vlc
+	#if log>1:
+		#log = 1
+	x = int(log*4096)
+	return filmic[x]
+
+
+# Calculate value after filmic log inverse
 def s_calculation(n):
 	look = bpy.context.scene.view_settings.look
 	if look=="None":
@@ -413,13 +432,6 @@ def update_iso_handler(self, context):
 	update_iso(context)
 def update_ev_handler(self, context):
 	update_ev(context)
-
-
-@persistent
-def timer():
-	global flag
-	flag = True
-	return 0.1
 
 
 class CameraSettings(PropertyGroup):
@@ -508,6 +520,17 @@ class CameraSettings(PropertyGroup):
 			],
 		description="Select an auto exposure metering mode",
 		default="Center Weighted"
+		)
+
+	# Exposure Compensation
+	ec : bpy.props.FloatProperty(
+		name = "Exposure",
+		description = "Exposure Compensation value: add or subtract brightness",
+		min = -3,
+		max = 3,
+		step = 1,
+		precision = 2,
+		default = 0
 		)
 
 
