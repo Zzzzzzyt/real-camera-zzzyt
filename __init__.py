@@ -24,7 +24,7 @@ from mathutils import Vector
 from bpy.app.handlers import persistent
 
 
-# Panel
+# Real Camera panel
 class REALCAMERA_PT_Panel(Panel):
 	bl_category = "Real Camera"
 	bl_label = "Real Camera"
@@ -47,15 +47,20 @@ class REALCAMERA_PT_Panel(Panel):
 		layout = self.layout
 		layout.enabled = settings.enabled
 
-		col = layout.column()
+		# Exposure triangle
+		layout.use_property_split = True
+		layout.use_property_decorate = False
+		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
+		col = flow.column()
 		sub = col.column(align=True)
 		if context.scene.render.engine in ["BLENDER_EEVEE", "BLENDER_WORKBENCH"]:
 			sub.prop(cam.gpu_dof, 'fstop', text="Aperture")
 		else:
 			sub.prop(cam.cycles, 'aperture_fstop', text="Aperture")
 		sub.prop(settings, 'shutter_speed')
-		sub.prop(settings, 'iso')
 
+		# Mechanics
+		layout.use_property_split = False
 		row = layout.row()
 		row.prop(settings, 'af')
 		sub = row.row(align=True)
@@ -63,20 +68,12 @@ class REALCAMERA_PT_Panel(Panel):
 		if settings.af:
 			sub.prop(settings, 'af_bake', icon='PLAY', text="Bake")
 			sub.prop(settings, 'af_step', text="Step")
-
+		layout.use_property_split = True
 		split = layout.split()
 		col = split.column(align=True)
 		if not settings.af:
 			col.prop(cam, 'dof_distance', text="Focus Point")
 		col.prop(cam, 'lens', text="Focal Length")
-		ev = calculate_ev(context)
-		ev = str(ev)
-		col = layout.column()
-		col.prop(settings, 'ae')
-		col.label(text="")
-		row = col.row(align=True)
-		row.alignment = 'CENTER'
-		row.label(text="Exposure Value: "+ev, icon='LIGHT_SUN')
 
 
 # Auto Exposure panel
@@ -97,7 +94,7 @@ class AUTOEXP_PT_Panel(Panel):
 		layout = self.layout
 		layout.enabled = settings.enable_ae
 
-		# Drop Down Modes
+		# Modes
 		col = layout.column(align=True)
 		row = col.row(align=True)
 		row.alignment = "CENTER"
@@ -106,8 +103,9 @@ class AUTOEXP_PT_Panel(Panel):
 		row.scale_x = 1.5
 		row.scale_y = 1.5
 		row.alignment = "CENTER"
-		row.prop(settings, 'ae_mode', expand=True)
+		row.prop(settings, 'ae_mode', text="", expand=True)
 		col.label(text="")
+		# Settings
 		layout.use_property_split = True
 		layout.use_property_decorate = False
 		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
@@ -126,9 +124,8 @@ def toggle_update(self, context):
 		# change aperture to FSTOP
 		bpy.data.cameras[name].cycles.aperture_type = 'FSTOP'
 		# initial values Issue
-		update_aperture(context)
-		update_shutter_speed(context)
-		update_iso(context)
+		update_aperture(self, context)
+		update_shutter_speed(self, context)
 	else:
 		# reset limits
 		name = context.active_object.name
@@ -138,42 +135,14 @@ def toggle_update(self, context):
 
 
 # Update Aperture
-def update_aperture(context):
+def update_aperture(self, context):
 	context.object.data.cycles.aperture_fstop = context.scene.camera_settings.aperture
-	update_ev(context)
 # Update Shutter Speed
-def update_shutter_speed(context):
+def update_shutter_speed(self, context):
 	fps = context.scene.render.fps
-	sp = context.scene.camera_settings.shutter_speed
-	motion = fps*(1/sp)
+	shutter = context.scene.camera_settings.shutter_speed
+	motion = fps*shutter
 	context.scene.render.motion_blur_shutter = motion
-	update_ev(context)
-# Update ISO
-def update_iso(context):
-	update_ev(context)
-
-
-# Update EV
-def calculate_ev(context):
-	settings = context.scene.camera_settings
-	A = settings.aperture
-	S = 1/settings.shutter_speed
-	I = settings.iso
-	EV = math.log((100*A**2/(I*S)), 2)
-	EV = round(EV, 2)
-	return EV
-
-
-# Update EV in color management
-def update_ev(context):
-	settings = context.scene.camera_settings
-	if settings.ae:
-		EV = calculate_ev(context)
-		# Filmic
-		filmic = -0.68*EV+5.95
-		context.scene.view_settings.exposure = filmic
-	else:
-		context.scene.view_settings.exposure = 0
 
 
 # Update Autofocus
@@ -225,15 +194,6 @@ def update_af_bake(self, context):
 					fcurves.remove(c)
 
 
-# Read filmic values from files
-def read_filmic_values(path):
-	nums = []
-	with open(path) as filmic_file:
-		for line in filmic_file:
-			nums.append(float(line))
-	return nums
-
-
 # Enable Auto Exposure
 def update_ae(self, context):
 	ae = context.scene.camera_settings.enable_ae
@@ -242,6 +202,15 @@ def update_ae(self, context):
 		handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'PRE_VIEW')
 	else:
 		bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
+
+
+# Read filmic values from files
+def read_filmic_values(path):
+	nums = []
+	with open(path) as filmic_file:
+		for line in filmic_file:
+			nums.append(float(line))
+	return nums
 
 
 # Auto Exposure algorithms
@@ -375,8 +344,7 @@ def s_calc(log):
 		filmic = filmic_lc
 	elif look=="Filmic - Very Low Contrast":
 		filmic = filmic_vlc
-	#if log>1:
-		#log = 1
+	print("log: ", log)
 	x = int(log*4096)
 	return filmic[x]
 
@@ -413,29 +381,25 @@ def s_calculation(n):
 	return (middle + 1) / len(filmic)
 
 
+# RGB to Luminance
 def luminance(buf):
 	lum = 0.2126*buf[0] + 0.7152*buf[1] + 0.0722*buf[2]
 	return lum
 
 
-# Handlers
+'''# Handlers
 @persistent
 def camera_handler(scene):
 	settings = scene.camera_settings
 	if settings.enabled:
 		update_aperture(bpy.context)
 		update_shutter_speed(bpy.context)
-		update_iso(bpy.context)
 
 
 def update_aperture_handler(self, context):
 	update_aperture(context)
 def update_shutter_speed_handler(self, context):
-	update_shutter_speed(context)
-def update_iso_handler(self, context):
-	update_iso(context)
-def update_ev_handler(self, context):
-	update_ev(context)
+	update_shutter_speed(context)'''
 
 
 class CameraSettings(PropertyGroup):
@@ -456,25 +420,18 @@ class CameraSettings(PropertyGroup):
 		step = 1,
 		precision = 2,
 		default = 5.6,
-		update = update_aperture_handler
+		update = update_aperture
 		)
 
-	shutter_speed : bpy.props.IntProperty(
+	shutter_speed : bpy.props.FloatProperty(
 		name = "Shutter Speed",
-		description = "Exposure time of the sensor in seconds (1/value). From 1/10000 to 1/1. Gives a motion blur effect",
-		min = 1,
-		max = 10000,
-		default = 500,
-		update = update_shutter_speed_handler
-		)
-
-	iso : bpy.props.IntProperty(
-		name = "ISO",
-		description = "Sensor sensitivity. From 1 to 102400. Gives more or less brightness",
-		min = 1,
-		max = 102400,
-		default = 100,
-		update = update_iso_handler
+		description = "Exposure time of the sensor in seconds. From 1/10000 to 10. Gives a motion blur effect",
+		min = 0.0001,
+		max = 100,
+		step = 10,
+		precision = 4,
+		default = 0.5,
+		update = update_shutter_speed
 		)
 
 	# Mechanics
@@ -500,13 +457,7 @@ class CameraSettings(PropertyGroup):
 		default = 24
 		)
 
-	ae : bpy.props.BoolProperty(
-		name = "Autoexposure",
-		description = "Automatically changes the exposure value of the scene",
-		default = False,
-		update = update_ev_handler
-		)
-
+	# Auto Exposure
 	enable_ae : bpy.props.BoolProperty(
 		name = "Auto Exposure",
 		description = "Enable Auto Exposure",
@@ -514,19 +465,17 @@ class CameraSettings(PropertyGroup):
 		update = update_ae
 		)
 
-	# Auto Exposure
 	ae_mode : bpy.props.EnumProperty(
 		name="Mode",
 		items= [
-			("Center Spot", "", "Center Spot", 'PIVOT_BOUNDBOX', 0),
-			("Center Weighted", "", "Center Weighted", 'CLIPUV_HLT', 1),
-			("Full Window", "", "Full Window", 'FACESEL', 2),
+			("Center Spot", "Center Spot", "Sample the pixel in the center of the window", 'PIVOT_BOUNDBOX', 0),
+			("Center Weighted", "Center Weighted", "Sample a grid of pixels and gives more weight to the ones near the center", 'CLIPUV_HLT', 1),
+			("Full Window", "Full Window", "Sample a grid of pixels among the whole window", 'FACESEL', 2),
 			],
 		description="Select an auto exposure metering mode",
 		default="Center Weighted"
 		)
 
-	# Exposure Compensation
 	ec : bpy.props.FloatProperty(
 		name = "EV Compensation",
 		description = "Exposure Compensation value: add or subtract brightness",
@@ -555,7 +504,7 @@ def register():
 	for cls in classes:
 		bpy.utils.register_class(cls)
 	bpy.types.Scene.camera_settings = bpy.props.PointerProperty(type=CameraSettings)
-	bpy.app.handlers.frame_change_post.append(camera_handler)
+	#bpy.app.handlers.frame_change_post.append(camera_handler)
 
 
 # Unregister
@@ -563,7 +512,7 @@ def unregister():
 	for cls in classes:
 		bpy.utils.unregister_class(cls)
 	del bpy.types.Scene.camera_settings
-	bpy.app.handlers.frame_change_post.remove(camera_handler)
+	#bpy.app.handlers.frame_change_post.remove(camera_handler)
 
 
 if __name__ == "__main__":
