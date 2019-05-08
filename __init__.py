@@ -84,6 +84,10 @@ class AUTOEXP_PT_Panel(Panel):
 	bl_category = "Real Camera"
 	bl_label = "Auto Exposure"
 
+	@classmethod
+	def poll(cls, context):
+		return context.scene.render.engine in {'BLENDER_EEVEE', 'CYCLES'}
+
 	def draw_header(self, context):
 		settings = context.scene.camera_settings
 		layout = self.layout
@@ -194,16 +198,6 @@ def update_af_bake(self, context):
 					fcurves.remove(c)
 
 
-# Enable Auto Exposure
-def update_ae(self, context):
-	ae = context.scene.camera_settings.enable_ae
-	global handle
-	if ae:
-		handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'PRE_VIEW')
-	else:
-		bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
-
-
 # Read filmic values from files
 def read_filmic_values(path):
 	nums = []
@@ -211,6 +205,35 @@ def read_filmic_values(path):
 		for line in filmic_file:
 			nums.append(float(line))
 	return nums
+
+
+# Global values
+handle = ()
+path = os.path.join(os.path.dirname(__file__), "looks/")
+filmic_vhc = read_filmic_values(path + "Very High Contrast")
+filmic_hc = read_filmic_values(path + "High Contrast")
+filmic_mhc = read_filmic_values(path + "Medium High Contrast")
+filmic_bc = read_filmic_values(path + "Base Contrast")
+filmic_mlc = read_filmic_values(path + "Medium Low Contrast")
+filmic_lc = read_filmic_values(path + "Low Contrast")
+filmic_vlc = read_filmic_values(path + "Very Low Contrast")
+old_engine = ""
+
+
+# Enable Auto Exposure
+def update_ae(self, context):
+	ae = context.scene.camera_settings.enable_ae
+	if ae:
+		engine = context.scene.render.engine
+		global handle
+		if engine=="BLENDER_EEVEE":
+			handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'PRE_VIEW')
+		if engine=="CYCLES":
+			handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'POST_PIXEL')
+	else:
+		bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
+	global old_engine
+	old_engine = bpy.context.scene.render.engine
 
 
 # Auto Exposure algorithms
@@ -301,7 +324,6 @@ def ae_calc():
 			avg_min = 0.49
 			avg_max = 0.51
 			middle = 0.18
-		print("average: ", avg)
 		if not (avg>avg_min and avg<avg_max):
 			# Measure scene referred value and change the exposure value
 			s_curve = s_calculation(avg)
@@ -311,18 +333,6 @@ def ae_calc():
 			future = -math.log2(scene/middle)
 			exposure = past-((past-future)/5)
 			bpy.context.scene.view_settings.exposure = exposure
-
-
-# Global values
-handle = ()
-path = os.path.join(os.path.dirname(__file__), "looks/")
-filmic_vhc = read_filmic_values(path + "Very High Contrast")
-filmic_hc = read_filmic_values(path + "High Contrast")
-filmic_mhc = read_filmic_values(path + "Medium High Contrast")
-filmic_bc = read_filmic_values(path + "Base Contrast")
-filmic_mlc = read_filmic_values(path + "Medium Low Contrast")
-filmic_lc = read_filmic_values(path + "Low Contrast")
-filmic_vlc = read_filmic_values(path + "Very Low Contrast")
 
 
 # Calculate value after filmic log
@@ -344,7 +354,6 @@ def s_calc(log):
 		filmic = filmic_lc
 	elif look=="Filmic - Very Low Contrast":
 		filmic = filmic_vlc
-	print("log: ", log)
 	x = int(log*4096)
 	return filmic[x]
 
@@ -387,23 +396,8 @@ def luminance(buf):
 	return lum
 
 
-'''# Handlers
-@persistent
-def camera_handler(scene):
-	settings = scene.camera_settings
-	if settings.enabled:
-		update_aperture(bpy.context)
-		update_shutter_speed(bpy.context)
-
-
-def update_aperture_handler(self, context):
-	update_aperture(context)
-def update_shutter_speed_handler(self, context):
-	update_shutter_speed(context)'''
-
-
 class CameraSettings(PropertyGroup):
-	# Toggle
+	# Enable
 	enabled : bpy.props.BoolProperty(
 		name = "Enable Real Camera",
 		description = "Enable Real Camera",
@@ -487,7 +481,41 @@ class CameraSettings(PropertyGroup):
 		)
 
 
-# Preferences ###############################################
+# Render engine handler
+@persistent
+def camera_handler(scene):
+	subscribe_to = bpy.types.RenderSettings, "engine"
+	bpy.types.Scene.realcam_render = object()
+	bpy.msgbus.subscribe_rna(
+		key=subscribe_to,
+		owner=bpy.types.Scene.realcam_render,
+		args=(),
+		notify=realcam_handler
+		)
+
+@persistent
+def realcam_handler(*args):
+	ae = bpy.context.scene.camera_settings.enable_ae
+	if ae:
+		engine = bpy.context.scene.render.engine
+		global old_engine
+		global handle
+		if engine!=old_engine:
+			if old_engine=="BLENDER_EEVEE":
+				bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
+			elif old_engine=="CYCLES":
+				bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
+			if engine=="BLENDER_EEVEE":
+				handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'PRE_VIEW')
+			if engine=="CYCLES":
+				handle = bpy.types.SpaceView3D.draw_handler_add(ae_calc, (), 'WINDOW', 'POST_PIXEL')
+			old_engine = engine
+
+def unsubscribe_to_rna_props():
+	bpy.msgbus.clear_by_owner(bpy.types.Scene.realcam_render)
+
+
+# Preferences
 
 
 ############################################################################
@@ -504,7 +532,9 @@ def register():
 	for cls in classes:
 		bpy.utils.register_class(cls)
 	bpy.types.Scene.camera_settings = bpy.props.PointerProperty(type=CameraSettings)
-	#bpy.app.handlers.frame_change_post.append(camera_handler)
+	# Render engine handler
+	bpy.app.handlers.load_post.append(camera_handler)
+	camera_handler(None)
 
 
 # Unregister
@@ -512,7 +542,9 @@ def unregister():
 	for cls in classes:
 		bpy.utils.unregister_class(cls)
 	del bpy.types.Scene.camera_settings
-	#bpy.app.handlers.frame_change_post.remove(camera_handler)
+	# Render engine handler
+	bpy.app.handlers.load_post.remove(camera_handler)
+	unsubscribe_to_rna_props()
 
 
 if __name__ == "__main__":
