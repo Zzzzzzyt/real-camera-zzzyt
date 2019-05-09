@@ -109,13 +109,17 @@ class AUTOEXP_PT_Panel(Panel):
 		row.alignment = "CENTER"
 		row.prop(settings, 'ae_mode', text="", expand=True)
 		col.label(text="")
+
 		# Settings
 		layout.use_property_split = True
 		layout.use_property_decorate = False
 		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
 		col = flow.column()
 		col.prop(settings, 'ec', slider=True)
-		
+		if settings.ae_mode=="Center Weighted":
+			col.prop(settings, 'center_grid')
+		if settings.ae_mode=="Full Window":
+			col.prop(settings, 'full_grid')
 
 
 # Enable camera
@@ -258,7 +262,7 @@ def ae_calc():
 
 		# Full Window
 		if settings.ae_mode=="Full Window":
-			grid = 7
+			grid = settings.full_grid
 			values = 0
 			step = 1/(grid+1)
 			for i in range (grid):
@@ -272,7 +276,7 @@ def ae_calc():
 
 		# Center Weighted
 		if settings.ae_mode=="Center Weighted":
-			circles = 4
+			circles = settings.center_grid
 			if width>=height:
 				max = width
 			else:
@@ -478,6 +482,22 @@ class CameraSettings(PropertyGroup):
 		step = 1,
 		precision = 2,
 		default = 0
+		)
+
+	center_grid : bpy.props.IntProperty(
+		name = "Circles",
+		description = "Number of circles to sample: more circles means more accurate auto exposure, but also means slower viewport",
+		min = 2,
+		max = 20,
+		default = 4
+		)
+
+	full_grid : bpy.props.IntProperty(
+		name = "Grid",
+		description = "Number of rows and columns to sample: more rows and columns means more accurate auto exposure, but also means slower viewport",
+		min = 2,
+		max = 20,
+		default = 7
 		)
 
 
