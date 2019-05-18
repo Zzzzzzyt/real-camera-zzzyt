@@ -56,10 +56,7 @@ class REALCAMERA_PT_Panel(Panel):
 		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
 		col = flow.column()
 		sub = col.column(align=True)
-		if context.scene.render.engine in ["BLENDER_EEVEE", "BLENDER_WORKBENCH"]:
-			sub.prop(cam.gpu_dof, 'fstop', text="Aperture")
-		else:
-			sub.prop(cam.cycles, 'aperture_fstop', text="Aperture")
+		sub.prop(cam.dof, "aperture_fstop")
 		sub.prop(settings, 'shutter_speed')
 
 		# Mechanics
@@ -72,7 +69,7 @@ class REALCAMERA_PT_Panel(Panel):
 		col = flow.column()
 		sub = col.column(align=True)
 		if not settings.af:
-			sub.prop(cam, 'dof_distance', text="Focus Point")
+			sub.prop(cam.dof, "focus_distance", text="Focus Point")
 		sub.prop(cam, 'lens', text="Focal Length")
 
 		# Updater
@@ -138,12 +135,16 @@ def toggle_update(self, context):
 		name = context.active_object.name
 		# set limits
 		bpy.data.cameras[name].show_limits = True
-		# change aperture to FSTOP
-		bpy.data.cameras[name].cycles.aperture_type = 'FSTOP'
+		# enable DOF
+		context.object.data.dof.use_dof = True
+		# set camera size
+		bpy.context.object.data.display_size = 0.2
 		# initial values Issue
 		update_aperture(self, context)
 		update_shutter_speed(self, context)
 	else:
+		# disable DOF
+		context.object.data.dof.use_dof = False
 		# reset limits
 		name = context.active_object.name
 		bpy.data.cameras[name].show_limits = False
@@ -171,7 +172,7 @@ def update_af(self, context):
 		# ray Cast
 		ray = context.scene.ray_cast(context.scene.view_layers[0], obj.location, obj.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)))
 		distance = (ray[1]-obj.location).magnitude
-		bpy.data.cameras[name].dof_distance = distance
+		bpy.context.object.data.dof.focus_distance = distance
 	else:
 		# reset baked af
 		context.scene.camera_settings.af_bake = False
@@ -195,7 +196,7 @@ def update_af_bake(self, context):
 		# every step frames, place a keyframe
 		for i in range(n+1):
 			update_af(self, context)
-			cam.keyframe_insert('dof_distance')
+			cam.dof.keyframe_insert('focus_distance')
 			scene.frame_set(scene.frame_current+steps)
 		# current Frame
 		scene.frame_current = current_frame
@@ -207,7 +208,7 @@ def update_af_bake(self, context):
 			a=0
 		else:
 			for c in fcurves:
-				if c.data_path.startswith("dof_distance"):
+				if c.data_path.startswith("dof.focus_distance"):
 					fcurves.remove(c)
 
 
