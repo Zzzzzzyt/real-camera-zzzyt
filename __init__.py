@@ -3,7 +3,7 @@ bl_info = {
 	"name": "Real Camera",
 	"description": "Physical camera controls",
 	"author": "Wolf",
-	"version": (3, 0),
+	"version": (3, 1),
 	"blender": (2, 80, 0),
 	"location": "Camera Properties",
 	"wiki_url": "https://3d-wolf.com/products/camera.html",
@@ -56,7 +56,7 @@ class REALCAMERA_PT_Panel(Panel):
 		flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
 		col = flow.column()
 		sub = col.column(align=True)
-		sub.prop(cam.dof, "aperture_fstop")
+		sub.prop(cam.dof, "aperture_fstop", text="Aperture")
 		sub.prop(settings, 'shutter_speed')
 
 		# Mechanics
@@ -227,7 +227,7 @@ path = os.path.join(os.path.dirname(__file__), "looks/")
 filmic_vhc = read_filmic_values(path + "Very High Contrast")
 filmic_hc = read_filmic_values(path + "High Contrast")
 filmic_mhc = read_filmic_values(path + "Medium High Contrast")
-filmic_bc = read_filmic_values(path + "Base Contrast")
+filmic_bc = read_filmic_values(path + "Medium Contrast")
 filmic_mlc = read_filmic_values(path + "Medium Low Contrast")
 filmic_lc = read_filmic_values(path + "Low Contrast")
 filmic_vlc = read_filmic_values(path + "Very Low Contrast")
@@ -360,7 +360,7 @@ def s_calc(log):
 		filmic = filmic_hc
 	elif look=="Filmic - Medium High Contrast":
 		filmic = filmic_mhc
-	elif look=="Filmic - Base Contrast":
+	elif look=="Filmic - Medium Contrast":
 		filmic = filmic_bc
 	elif look=="Filmic - Medium Low Contrast":
 		filmic = filmic_mlc
@@ -383,7 +383,7 @@ def s_calculation(n):
 		filmic = filmic_hc
 	elif look=="Filmic - Medium High Contrast":
 		filmic = filmic_mhc
-	elif look=="Filmic - Base Contrast":
+	elif look=="Filmic - Medium Contrast":
 		filmic = filmic_bc
 	elif look=="Filmic - Medium Low Contrast":
 		filmic = filmic_mlc
