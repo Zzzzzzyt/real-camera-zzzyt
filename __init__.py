@@ -22,7 +22,6 @@ from bpy.props import *
 from bpy.types import PropertyGroup, Panel, Operator
 from mathutils import Vector
 from bpy.app.handlers import persistent
-from . import addon_updater_ops
 
 
 # Real Camera panel
@@ -47,8 +46,6 @@ class REALCAMERA_PT_Panel(Panel):
 		cam = context.camera
 		layout = self.layout
 		layout.enabled = settings.enabled
-		# Updater
-		addon_updater_ops.check_for_update_background()
 
 		# Exposure triangle
 		layout.use_property_split = True
@@ -71,9 +68,6 @@ class REALCAMERA_PT_Panel(Panel):
 		if not settings.af:
 			sub.prop(cam.dof, "focus_distance", text="Focus Point")
 		sub.prop(cam, 'lens', text="Focal Length")
-
-		# Updater
-		addon_updater_ops.update_notice_box_ui(self, context)
 
 
 # Auto Exposure panel
@@ -98,8 +92,6 @@ class AUTOEXP_PT_Panel(Panel):
 		settings = context.scene.camera_settings
 		layout = self.layout
 		layout.enabled = settings.enable_ae
-		# Updater
-		addon_updater_ops.check_for_update_background()
 
 		# Modes
 		col = layout.column(align=True)
@@ -123,9 +115,6 @@ class AUTOEXP_PT_Panel(Panel):
 			col.prop(settings, 'center_grid')
 		if settings.ae_mode=="Full Window":
 			col.prop(settings, 'full_grid')
-
-		# Updater
-		addon_updater_ops.update_notice_box_ui(self, context)
 
 
 # Enable camera
@@ -545,67 +534,18 @@ def unsubscribe_to_rna_props():
 	bpy.msgbus.clear_by_owner(bpy.types.Scene.realcam_render)
 
 
-# Preferences Updater
-@addon_updater_ops.make_annotations
-class RealCameraPreferences(bpy.types.AddonPreferences):
-	bl_idname = __package__
-
-	auto_check_update = bpy.props.BoolProperty(
-		name="Auto-check for Update",
-		description="If enabled, auto-check for updates using an interval",
-		default=True,
-		)
-	updater_intrval_months = bpy.props.IntProperty(
-		name='Months',
-		description="Number of months between checking for updates",
-		default=0,
-		min=0
-		)
-	updater_intrval_days = bpy.props.IntProperty(
-		name='Days',
-		description="Number of days between checking for updates",
-		default=1,
-		min=0,
-		max=31
-		)
-	updater_intrval_hours = bpy.props.IntProperty(
-		name='Hours',
-		description="Number of hours between checking for updates",
-		default=0,
-		min=0,
-		max=23
-		)
-	updater_intrval_minutes = bpy.props.IntProperty(
-		name='Minutes',
-		description="Number of minutes between checking for updates",
-		default=0,
-		min=0,
-		max=59
-		)
-
-	def draw(self, context):
-		layout = self.layout
-		mainrow = layout.row()
-		col = mainrow.column()
-		addon_updater_ops.update_settings_ui(self, context)
-
-
 ############################################################################
 classes = (
 	REALCAMERA_PT_Panel,
 	AUTOEXP_PT_Panel,
-	CameraSettings,
-	RealCameraPreferences
+	CameraSettings
 	)
 
 register, unregister = bpy.utils.register_classes_factory(classes)
 
 # Register
 def register():
-	# Updater
-	addon_updater_ops.register(bl_info)
 	for cls in classes:
-		addon_updater_ops.make_annotations(cls)
 		bpy.utils.register_class(cls)
 	bpy.types.Scene.camera_settings = bpy.props.PointerProperty(type=CameraSettings)
 	# Render engine handler
@@ -615,8 +555,6 @@ def register():
 
 # Unregister
 def unregister():
-	# Updater
-	addon_updater_ops.unregister()
 	for cls in classes:
 		bpy.utils.unregister_class(cls)
 	del bpy.types.Scene.camera_settings
