@@ -16,12 +16,11 @@ bl_info = {
 # Libraries
 import bpy
 import bgl
-import math
+from math import ceil, log2, pow
 import os
 from bpy.props import *
 from bpy.types import PropertyGroup, Panel, Operator
 from mathutils import Vector
-from bpy.app.handlers import persistent
 
 
 # Real Camera panel
@@ -203,7 +202,6 @@ def update_af_bake(self, context):
                     fcurves.remove(c)
 
 
-# Read filmic values from files
 def read_filmic_values(path):
     nums = []
     with open(path) as filmic_file:
@@ -212,8 +210,7 @@ def read_filmic_values(path):
     return nums
 
 
-# Global values
-handle = ()
+# Globals
 path = os.path.join(os.path.dirname(__file__), "looks/")
 filmic_vhc = read_filmic_values(path + "Very High Contrast")
 filmic_hc = read_filmic_values(path + "High Contrast")
@@ -222,26 +219,18 @@ filmic_mc = read_filmic_values(path + "Medium Contrast")
 filmic_mlc = read_filmic_values(path + "Medium Low Contrast")
 filmic_lc = read_filmic_values(path + "Low Contrast")
 filmic_vlc = read_filmic_values(path + "Very Low Contrast")
-old_engine = ""
+handle = ()
 
 
-# Enable Auto Exposure
-def update_ae(self, context):
+def toggle_auto_exposure(self, context):
     ae = context.scene.camera_settings.enable_ae
     if ae:
-        engine = context.scene.render.engine
         global handle
-        if engine=="BLENDER_EEVEE":
-            handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
-        if engine=="CYCLES":
-            handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'POST_PIXEL')
+        handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
     else:
         bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
-    global old_engine
-    old_engine = bpy.context.scene.render.engine
 
 
-# Auto Exposure algorithm
 def auto_exposure():
     shading = bpy.context.area.spaces.active.shading.type
 
@@ -320,35 +309,23 @@ def auto_exposure():
 
             avg = values / weights
 
-        ev_comp = bpy.context.scene.camera_settings.ev_compensation
-        s = 0
-        avg_min = 0
-        avg_max = 0
-        print("Average: ", avg)
-        if ev_comp != 0:
-            print("hey")
-            middle = 0.18 * math.pow(2, ev_comp)
-            log = (math.log2(middle / 0.18) + 10) / 16.5
+        s = avg_min = avg_max = middle = 0
+
+        if avg > 0:
+            actual_exposure = bpy.context.scene.view_settings.exposure
+            ev_compensation = bpy.context.scene.camera_settings.ev_compensation
+            middle_gray = 0.18 * pow(2, ev_compensation)
+            scene_exposed = avg * pow(2, actual_exposure)
+            log = (log2(scene_exposed / 0.18) + 10) / 16.5
             s = s_calc(log)
-            avg_min = s - 0.01
-            avg_max = s + 0.01
-        else:
-            middle = 0.18
-            avg_comp = avg * math.pow(2, bpy.context.scene.view_settings.exposure)
-            log = ((math.log2(avg_comp / 0.18) + 10) / 16.5)
-            s = s_calc(log)
-            avg_min = 0.49
-            avg_max = 0.51
-        print("S: ", s)
-        if not (s > avg_min and s < avg_max):
-            # measure scene referred value and change the exposure value
-            past = bpy.context.scene.view_settings.exposure
-            #s_curve = s_calculation(avg)
-            #log = math.pow(2, (16.5 * s_curve - 12.47393))
-            #scene = log / (math.pow(2, past))
-            future = -math.log2(avg / middle)
-            exposure = past - ((past - future) / 5)
-            #bpy.context.scene.view_settings.exposure = exposure
+            log_target = (log2(middle_gray / 0.18) + 10) / 16.5
+            s_target = s_calc(log_target)
+            avg_min = s_target - 0.01
+            avg_max = s_target + 0.01
+            if not (s > avg_min and s < avg_max):
+                future = -log2(avg / middle_gray)
+                exposure = actual_exposure - (actual_exposure - future) / 5
+                bpy.context.scene.view_settings.exposure = exposure
 
 
 # Calculate value after filmic log
@@ -401,7 +378,7 @@ def s_calculation(n):
     middle = begin
     # find value in middle (binary search)
     while (end-begin) > 1:
-        middle = math.ceil((end+begin)/2)
+        middle = ceil((end+begin)/2)
         if filmic[middle] > n:
             end = middle
         else:
@@ -475,7 +452,7 @@ class CameraSettings(PropertyGroup):
         name = "Auto Exposure",
         description = "Enable Auto Exposure",
         default = False,
-        update = update_ae
+        update = toggle_auto_exposure
         )
 
     ae_mode : bpy.props.EnumProperty(
@@ -516,40 +493,6 @@ class CameraSettings(PropertyGroup):
         )
 
 
-# Render engine handler
-@persistent
-def camera_handler(scene):
-    subscribe_to = bpy.types.RenderSettings, "engine"
-    bpy.types.Scene.realcam_render = object()
-    bpy.msgbus.subscribe_rna(
-        key=subscribe_to,
-        owner=bpy.types.Scene.realcam_render,
-        args=(),
-        notify=realcam_handler
-        )
-
-@persistent
-def realcam_handler(*args):
-    ae = bpy.context.scene.camera_settings.enable_ae
-    if ae:
-        engine = bpy.context.scene.render.engine
-        global old_engine
-        global handle
-        if engine!=old_engine:
-            if old_engine=="BLENDER_EEVEE":
-                bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
-            elif old_engine=="CYCLES":
-                bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
-            if engine=="BLENDER_EEVEE":
-                handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
-            if engine=="CYCLES":
-                handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'POST_PIXEL')
-            old_engine = engine
-
-def unsubscribe_to_rna_props():
-    bpy.msgbus.clear_by_owner(bpy.types.Scene.realcam_render)
-
-
 ############################################################################
 classes = (
     REALCAMERA_PT_Panel,
@@ -564,9 +507,6 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.camera_settings = bpy.props.PointerProperty(type=CameraSettings)
-    # Render engine handler
-    bpy.app.handlers.load_post.append(camera_handler)
-    camera_handler(None)
 
 
 # Unregister
@@ -574,9 +514,6 @@ def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.camera_settings
-    # Render engine handler
-    bpy.app.handlers.load_post.remove(camera_handler)
-    unsubscribe_to_rna_props()
 
 
 if __name__ == "__main__":
