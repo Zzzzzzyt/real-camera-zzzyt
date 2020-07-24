@@ -148,7 +148,7 @@ def update_shutter_speed(self, context):
     motion = fps * shutter
     # set motion blur for Cycles and Eevee
     context.scene.render.motion_blur_shutter = motion
-    contect.scene.eevee.motion_blur_shutter = motion
+    context.scene.eevee.motion_blur_shutter = motion
 
 
 def update_autofocus(self, context):
@@ -237,10 +237,7 @@ def auto_exposure():
         # Center Weighed
         if settings.ae_mode == "Center Weighed":
             circles = settings.center_grid
-            if width >= height:
-                max = width
-            else:
-                max = height
+            max = width if width >= height else height
             half = max // 2
             step = max // (circles * 2 + 2)
             values = 0
@@ -301,25 +298,19 @@ def auto_exposure():
 class AUTOEXP_ae_toggle:
     bl_idname = "autoexp.toggle_ae"
     bl_label = "Enable AE"
-    bl_description = "Enable Auto Exposure draw handler"
+    bl_description = "Enable Auto Exposure handler"
 
     _handle = None
 
     @staticmethod
     def add_handler():
         if AUTOEXP_ae_toggle._handle is None:
-            AUTOEXP_ae_toggle._handle = bpy.types.SpaceView3D.draw_handler_add(
-                auto_exposure,
-                (),
-                'WINDOW',
-                'PRE_VIEW')
+            AUTOEXP_ae_toggle._handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
 
     @staticmethod
     def remove_handler():
         if AUTOEXP_ae_toggle._handle is not None:
-            bpy.types.SpaceView3D.draw_handler_remove(
-                AUTOEXP_ae_toggle._handle,
-                'WINDOW')
+            bpy.types.SpaceView3D.draw_handler_remove(AUTOEXP_ae_toggle._handle, 'WINDOW')
             AUTOEXP_ae_toggle._handle = None
 
 
