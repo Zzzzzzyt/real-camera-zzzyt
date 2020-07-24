@@ -16,11 +16,11 @@ bl_info = {
 # Libraries
 import bpy
 import bgl
-from math import ceil, log2, pow
 import os
-from bpy.props import *
-from bpy.types import PropertyGroup, Panel, Operator
+from math import ceil, log2, pow
 from mathutils import Vector
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
+from bpy.types import PropertyGroup, Panel, Operator
 
 
 # Real Camera panel
@@ -57,14 +57,14 @@ class REALCAMERA_PT_Panel(Panel):
 
         # Mechanics
         col = flow.column()
-        col.prop(settings, 'af')
-        if settings.af:
+        col.prop(settings, 'enable_af')
+        if settings.enable_af:
             row = col.row(align=True)
             row.prop(settings, 'af_step', text="Bake")
             row.prop(settings, 'af_bake', text="", icon='PLAY')
         col = flow.column()
         sub = col.column(align=True)
-        if not settings.af:
+        if not settings.enable_af:
             sub.prop(cam.dof, "focus_distance", text="Focus Point")
         sub.prop(cam, 'lens', text="Focal Length")
 
@@ -110,67 +110,62 @@ class AUTOEXP_PT_Panel(Panel):
         flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
         col = flow.column()
         col.prop(settings, 'ev_compensation', slider=True)
-        if settings.ae_mode=="Center Weighted":
+        if settings.ae_mode=="Center Weighed":
             col.prop(settings, 'center_grid')
         if settings.ae_mode=="Full Window":
             col.prop(settings, 'full_grid')
 
 
-# Enable camera
-def toggle_update(self, context):
+def enable_camera(self, context):
 	settings = context.scene.camera_settings
+	name = context.active_object.name
 	if settings.enabled:
-		name = context.active_object.name
 		# set limits
 		bpy.data.cameras[name].show_limits = True
 		# enable DOF
 		context.object.data.dof.use_dof = True
 		# set camera size
 		bpy.context.object.data.display_size = 0.2
-		# initial values Issue
+		# set initial values
 		update_aperture(self, context)
 		update_shutter_speed(self, context)
 	else:
 		# disable DOF
 		context.object.data.dof.use_dof = False
-		# reset limits
-		name = context.active_object.name
+		# disable limits
 		bpy.data.cameras[name].show_limits = False
-		# reset autofocus
-		bpy.context.scene.camera_settings.af = False
+		# disable autofocus
+		bpy.context.scene.camera_settings.enable_af = False
 
 
-# Update Aperture
 def update_aperture(self, context):
     context.object.data.cycles.aperture_fstop = context.scene.camera_settings.aperture
 
 
-# Update Shutter Speed
 def update_shutter_speed(self, context):
     fps = context.scene.render.fps
     shutter = context.scene.camera_settings.shutter_speed
-    motion = fps*shutter
+    motion = fps * shutter
     context.scene.render.motion_blur_shutter = motion
 
 
-# Update Autofocus
-def update_af(self, context):
-    af = context.scene.camera_settings.af
-    if af:
+def update_autofocus(self, context):
+    autofocus = context.scene.camera_settings.enable_af
+
+    if autofocus:
         name = context.active_object.name
         obj = bpy.data.objects[name]
         # ray cast
         ray = context.scene.ray_cast(context.scene.view_layers[0], obj.location, obj.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)))
-        distance = (ray[1]-obj.location).magnitude
+        distance = (ray[1] - obj.location).magnitude
         bpy.context.object.data.dof.focus_distance = distance
     else:
         # reset baked af
         context.scene.camera_settings.af_bake = False
-        update_af_bake(self, context)
+        autofocus_bake(self, context)
 
 
-# Autofocus Bake
-def update_af_bake(self, context):
+def autofocus_bake(self, context):
     scene = bpy.context.scene
     bake = scene.camera_settings.af_bake
     start = scene.frame_start
@@ -185,7 +180,7 @@ def update_af_bake(self, context):
         scene.frame_current = start
         # every step frames, place a keyframe
         for i in range(n + 1):
-            update_af(self, context)
+            update_autofocus(self, context)
             cam.dof.keyframe_insert('focus_distance')
             scene.frame_set(scene.frame_current + steps)
         # current Frame
@@ -202,7 +197,7 @@ def update_af_bake(self, context):
                     fcurves.remove(c)
 
 
-def read_filmic_values(path):
+def read_filmic(path):
     nums = []
     with open(path) as filmic_file:
         for line in filmic_file:
@@ -212,17 +207,17 @@ def read_filmic_values(path):
 
 # Globals
 path = os.path.join(os.path.dirname(__file__), "looks/")
-filmic_vhc = read_filmic_values(path + "Very High Contrast")
-filmic_hc = read_filmic_values(path + "High Contrast")
-filmic_mhc = read_filmic_values(path + "Medium High Contrast")
-filmic_mc = read_filmic_values(path + "Medium Contrast")
-filmic_mlc = read_filmic_values(path + "Medium Low Contrast")
-filmic_lc = read_filmic_values(path + "Low Contrast")
-filmic_vlc = read_filmic_values(path + "Very Low Contrast")
+filmic_vhc = read_filmic(path + "Very High Contrast")
+filmic_hc = read_filmic(path + "High Contrast")
+filmic_mhc = read_filmic(path + "Medium High Contrast")
+filmic_mc = read_filmic(path + "Medium Contrast")
+filmic_mlc = read_filmic(path + "Medium Low Contrast")
+filmic_lc = read_filmic(path + "Low Contrast")
+filmic_vlc = read_filmic(path + "Very Low Contrast")
 handle = ()
 
 
-def toggle_auto_exposure(self, context):
+def enable_auto_exposure(self, context):
     ae = context.scene.camera_settings.enable_ae
     if ae:
         global handle
@@ -242,7 +237,6 @@ def auto_exposure():
         bgl.glGetIntegerv(bgl.GL_VIEWPORT, viewport)
         width = viewport[2]
         height = viewport[3]
-        bgl.glDisable(bgl.GL_DEPTH_TEST)
         buf = bgl.Buffer(bgl.GL_FLOAT, 3)
 
         # Center Spot
@@ -250,7 +244,7 @@ def auto_exposure():
             x = width // 2
             y = height // 2
             bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-            avg = luminance(buf)
+            avg = rgb_to_luminance(buf)
 
         # Full Window
         if settings.ae_mode == "Full Window":
@@ -259,17 +253,17 @@ def auto_exposure():
             step = 1 / (grid + 1)
             for i in range (grid):
                 for j in range (grid):
-                    x = int(step*(j + 1) * width)
-                    y = int(step*(i + 1) * height)
+                    x = int(step * (j + 1) * width)
+                    y = int(step * (i + 1) * height)
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = luminance(buf)
+                    lum = rgb_to_luminance(buf)
                     values = values + lum
             avg = values / (grid * grid)
 
-        # Center Weighted
-        if settings.ae_mode == "Center Weighted":
+        # Center Weighed
+        if settings.ae_mode == "Center Weighed":
             circles = settings.center_grid
-            if width>=height:
+            if width >= height:
                 max = width
             else:
                 max = height
@@ -285,41 +279,41 @@ def auto_exposure():
                 for n in range (n_steps):
                     x = x + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = luminance(buf)
+                    lum = rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     y = y + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = luminance(buf)
+                    lum = rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     x = x - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = luminance(buf)
+                    lum = rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     y = y - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = luminance(buf)
+                    lum = rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
-
             avg = values / weights
 
         s = avg_min = avg_max = middle = 0
 
+        # if average is not 0 then update exposure
         if avg > 0:
             actual_exposure = bpy.context.scene.view_settings.exposure
             ev_compensation = bpy.context.scene.camera_settings.ev_compensation
             middle_gray = 0.18 * pow(2, ev_compensation)
             scene_exposed = avg * pow(2, actual_exposure)
             log = (log2(scene_exposed / 0.18) + 10) / 16.5
-            s = s_calc(log)
+            s = contrast(log)
             log_target = (log2(middle_gray / 0.18) + 10) / 16.5
-            s_target = s_calc(log_target)
+            s_target = contrast(log_target)
             avg_min = s_target - 0.01
             avg_max = s_target + 0.01
             if not (s > avg_min and s < avg_max):
@@ -328,8 +322,7 @@ def auto_exposure():
                 bpy.context.scene.view_settings.exposure = exposure
 
 
-# Calculate value after filmic log
-def s_calc(log):
+def contrast(log):
     if log < 1:
         look = bpy.context.scene.view_settings.look
         if look=="None":
@@ -354,55 +347,22 @@ def s_calc(log):
         return 1
 
 
-# Calculate value after filmic log inverse
-def s_calculation(n):
-    look = bpy.context.scene.view_settings.look
-    if look=="None":
-        filmic = filmic_mc
-    elif look=="Very High Contrast":
-        filmic = filmic_vhc
-    elif look=="High Contrast":
-        filmic = filmic_hc
-    elif look=="Medium High Contrast":
-        filmic = filmic_mhc
-    elif look=="Medium Contrast":
-        filmic = filmic_mc
-    elif look=="Medium Low Contrast":
-        filmic = filmic_mlc
-    elif look=="Low Contrast":
-        filmic = filmic_lc
-    elif look=="Very Low Contrast":
-        filmic = filmic_vlc
-    begin = 0
-    end = len(filmic)
-    middle = begin
-    # find value in middle (binary search)
-    while (end-begin) > 1:
-        middle = ceil((end+begin)/2)
-        if filmic[middle] > n:
-            end = middle
-        else:
-            begin = middle
-    return (middle + 1) / len(filmic)
-
-
-# RGB to Luminance
-def luminance(buf):
+def rgb_to_luminance(buf):
     lum = 0.2126 * buf[0] + 0.7152 * buf[1] + 0.0722 * buf[2]
     return lum
 
 
 class CameraSettings(PropertyGroup):
     # Enable
-    enabled : bpy.props.BoolProperty(
-        name = "Enable Real Camera",
+    enabled : BoolProperty(
+        name = "Real Camera",
         description = "Enable Real Camera",
         default = False,
-        update = toggle_update
+        update = enable_camera
         )
 
     # Exposure Triangle
-    aperture : bpy.props.FloatProperty(
+    aperture : FloatProperty(
         name = "Aperture",
         description = "Aperture of the lens in f-stops. From 0.1 to 64. Gives a depth of field effect",
         min = 0.1,
@@ -413,7 +373,7 @@ class CameraSettings(PropertyGroup):
         update = update_aperture
         )
 
-    shutter_speed : bpy.props.FloatProperty(
+    shutter_speed : FloatProperty(
         name = "Shutter Speed",
         description = "Exposure time of the sensor in seconds. From 1/10000 to 10. Gives a motion blur effect",
         min = 0.0001,
@@ -425,21 +385,21 @@ class CameraSettings(PropertyGroup):
         )
 
     # Mechanics
-    af : bpy.props.BoolProperty(
+    enable_af : BoolProperty(
         name = "Autofocus",
         description = "Enable Autofocus",
         default = False,
-        update = update_af
+        update = update_autofocus
         )
 
-    af_bake : bpy.props.BoolProperty(
+    af_bake : BoolProperty(
         name = "Autofocus Baking",
         description = "Bake Autofocus for the entire animation",
         default = False,
-        update = update_af_bake
+        update = autofocus_bake
         )
 
-    af_step : bpy.props.IntProperty(
+    af_step : IntProperty(
         name = "Step",
         description = "Every step frames insert a keyframe",
         min = 1,
@@ -448,25 +408,25 @@ class CameraSettings(PropertyGroup):
         )
 
     # Auto Exposure
-    enable_ae : bpy.props.BoolProperty(
+    enable_ae : BoolProperty(
         name = "Auto Exposure",
         description = "Enable Auto Exposure",
         default = False,
-        update = toggle_auto_exposure
+        update = enable_auto_exposure
         )
 
-    ae_mode : bpy.props.EnumProperty(
+    ae_mode : EnumProperty(
         name="Mode",
         items= [
             ("Center Spot", "Center Spot", "Sample the pixel in the center of the window", 'PIVOT_BOUNDBOX', 0),
-            ("Center Weighted", "Center Weighted", "Sample a grid of pixels and gives more weight to the ones near the center", 'CLIPUV_HLT', 1),
+            ("Center Weighed", "Center Weighed", "Sample a grid of pixels and gives more weight to the ones near the center", 'CLIPUV_HLT', 1),
             ("Full Window", "Full Window", "Sample a grid of pixels among the whole window", 'FACESEL', 2),
             ],
         description="Select an auto exposure metering mode",
-        default="Center Weighted"
+        default="Center Weighed"
         )
 
-    ev_compensation : bpy.props.FloatProperty(
+    ev_compensation : FloatProperty(
         name = "EV Compensation",
         description = "Exposure Compensation value: add or subtract brightness",
         min = -3,
@@ -476,7 +436,7 @@ class CameraSettings(PropertyGroup):
         default = 0
         )
 
-    center_grid : bpy.props.IntProperty(
+    center_grid : IntProperty(
         name = "Circles",
         description = "Number of circles to sample: more circles means more accurate auto exposure, but also means slower viewport",
         min = 2,
@@ -484,7 +444,7 @@ class CameraSettings(PropertyGroup):
         default = 4
         )
 
-    full_grid : bpy.props.IntProperty(
+    full_grid : IntProperty(
         name = "Grid",
         description = "Number of rows and columns to sample: more rows and columns means more accurate auto exposure, but also means slower viewport",
         min = 2,
@@ -502,6 +462,7 @@ classes = (
 
 register, unregister = bpy.utils.register_classes_factory(classes)
 
+
 # Register
 def register():
     for cls in classes:
@@ -514,6 +475,8 @@ def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.camera_settings
+    if handle is not None:
+        bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
 
 
 if __name__ == "__main__":
