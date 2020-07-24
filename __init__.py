@@ -16,11 +16,11 @@ bl_info = {
 # Libraries
 import bpy
 import bgl
-import os
 from math import ceil, log2, pow
 from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
 from bpy.types import PropertyGroup, Panel, Operator
+from . import functions
 
 
 # Real Camera panel
@@ -146,7 +146,9 @@ def update_shutter_speed(self, context):
     fps = context.scene.render.fps
     shutter = context.scene.camera_settings.shutter_speed
     motion = fps * shutter
+    # set motion blur for Cycles and Eevee
     context.scene.render.motion_blur_shutter = motion
+    contect.scene.eevee.motion_blur_shutter = motion
 
 
 def update_autofocus(self, context):
@@ -155,7 +157,7 @@ def update_autofocus(self, context):
     if autofocus:
         name = context.active_object.name
         obj = bpy.data.objects[name]
-        # ray cast
+        # shoot ray from center of camera until it hits a mesh and calculate distance
         ray = context.scene.ray_cast(context.scene.view_layers[0], obj.location, obj.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)))
         distance = (ray[1] - obj.location).magnitude
         bpy.context.object.data.dof.focus_distance = distance
@@ -176,6 +178,7 @@ def autofocus_bake(self, context):
     current_frame = scene.frame_current
     name = context.active_object.name
     cam = bpy.data.cameras[name]
+
     if bake:
         scene.frame_current = start
         # every step frames, place a keyframe
@@ -190,40 +193,11 @@ def autofocus_bake(self, context):
         try:
             fcurves = cam.animation_data.action.fcurves
         except AttributeError:
-            a = 0
+            pass
         else:
             for c in fcurves:
                 if c.data_path.startswith("dof.focus_distance"):
                     fcurves.remove(c)
-
-
-def read_filmic(path):
-    nums = []
-    with open(path) as filmic_file:
-        for line in filmic_file:
-            nums.append(float(line))
-    return nums
-
-
-# Globals
-path = os.path.join(os.path.dirname(__file__), "looks/")
-filmic_vhc = read_filmic(path + "Very High Contrast")
-filmic_hc = read_filmic(path + "High Contrast")
-filmic_mhc = read_filmic(path + "Medium High Contrast")
-filmic_mc = read_filmic(path + "Medium Contrast")
-filmic_mlc = read_filmic(path + "Medium Low Contrast")
-filmic_lc = read_filmic(path + "Low Contrast")
-filmic_vlc = read_filmic(path + "Very Low Contrast")
-handle = ()
-
-
-def enable_auto_exposure(self, context):
-    ae = context.scene.camera_settings.enable_ae
-    if ae:
-        global handle
-        handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
-    else:
-        bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
 
 
 def auto_exposure():
@@ -244,7 +218,7 @@ def auto_exposure():
             x = width // 2
             y = height // 2
             bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-            avg = rgb_to_luminance(buf)
+            average = functions.rgb_to_luminance(buf)
 
         # Full Window
         if settings.ae_mode == "Full Window":
@@ -256,9 +230,9 @@ def auto_exposure():
                     x = int(step * (j + 1) * width)
                     y = int(step * (i + 1) * height)
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = rgb_to_luminance(buf)
+                    lum = functions.rgb_to_luminance(buf)
                     values = values + lum
-            avg = values / (grid * grid)
+            average = values / (grid * grid)
 
         # Center Weighed
         if settings.ae_mode == "Center Weighed":
@@ -279,77 +253,82 @@ def auto_exposure():
                 for n in range (n_steps):
                     x = x + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = rgb_to_luminance(buf)
+                    lum = functions.rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     y = y + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = rgb_to_luminance(buf)
+                    lum = functions.rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     x = x - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = rgb_to_luminance(buf)
+                    lum = functions.rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
                 for n in range (n_steps):
                     y = y - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-                    lum = rgb_to_luminance(buf)
+                    lum = functions.rgb_to_luminance(buf)
                     values = values + lum * weight
                     weights = weights + weight
-            avg = values / weights
+            average = values / weights
 
-        s = avg_min = avg_max = middle = 0
-
-        # if average is not 0 then update exposure
-        if avg > 0:
+        # expose scene based on average
+        if average > 0:
             actual_exposure = bpy.context.scene.view_settings.exposure
             ev_compensation = bpy.context.scene.camera_settings.ev_compensation
-            middle_gray = 0.18 * pow(2, ev_compensation)
-            scene_exposed = avg * pow(2, actual_exposure)
+            # current
+            scene_exposed = average * pow(2, actual_exposure)
             log = (log2(scene_exposed / 0.18) + 10) / 16.5
-            s = contrast(log)
+            display = functions.contrast(log)
+            # target
+            middle_gray = 0.18 * pow(2, ev_compensation)
             log_target = (log2(middle_gray / 0.18) + 10) / 16.5
-            s_target = contrast(log_target)
-            avg_min = s_target - 0.01
-            avg_max = s_target + 0.01
-            if not (s > avg_min and s < avg_max):
-                future = -log2(avg / middle_gray)
+            display_target = functions.contrast(log_target)
+            avg_min = display_target - 0.01
+            avg_max = display_target + 0.01
+
+            # if not inside target threshold, update exposure
+            if not (display > avg_min and display < avg_max):
+                future = -log2(average / middle_gray)
                 exposure = actual_exposure - (actual_exposure - future) / 5
                 bpy.context.scene.view_settings.exposure = exposure
 
 
-def contrast(log):
-    if log < 1:
-        look = bpy.context.scene.view_settings.look
-        if look=="None":
-            filmic = filmic_mc
-        elif look=="Very High Contrast":
-            filmic = filmic_vhc
-        elif look=="High Contrast":
-            filmic = filmic_hc
-        elif look=="Medium High Contrast":
-            filmic = filmic_mhc
-        elif look=="Medium Contrast":
-            filmic = filmic_mc
-        elif look=="Medium Low Contrast":
-            filmic = filmic_mlc
-        elif look=="Low Contrast":
-            filmic = filmic_lc
-        elif look=="Very Low Contrast":
-            filmic = filmic_vlc
-        x = int(log * 4095)
-        return filmic[x]
+class AUTOEXP_ae_toggle:
+    bl_idname = "autoexp.toggle_ae"
+    bl_label = "Enable AE"
+    bl_description = "Enable Auto Exposure draw handler"
+
+    _handle = None
+
+    @staticmethod
+    def add_handler():
+        if AUTOEXP_ae_toggle._handle is None:
+            AUTOEXP_ae_toggle._handle = bpy.types.SpaceView3D.draw_handler_add(
+                auto_exposure,
+                (),
+                'WINDOW',
+                'PRE_VIEW')
+
+    @staticmethod
+    def remove_handler():
+        if AUTOEXP_ae_toggle._handle is not None:
+            bpy.types.SpaceView3D.draw_handler_remove(
+                AUTOEXP_ae_toggle._handle,
+                'WINDOW')
+            AUTOEXP_ae_toggle._handle = None
+
+
+def enable_auto_exposure(self, context):
+    ae = context.scene.camera_settings.enable_ae
+    if ae:
+        AUTOEXP_ae_toggle.add_handler()
     else:
-        return 1
-
-
-def rgb_to_luminance(buf):
-    lum = 0.2126 * buf[0] + 0.7152 * buf[1] + 0.0722 * buf[2]
-    return lum
+        AUTOEXP_ae_toggle.remove_handler()
 
 
 class CameraSettings(PropertyGroup):
@@ -416,19 +395,19 @@ class CameraSettings(PropertyGroup):
         )
 
     ae_mode : EnumProperty(
-        name="Mode",
-        items= [
+        name = "Mode",
+        items = [
             ("Center Spot", "Center Spot", "Sample the pixel in the center of the window", 'PIVOT_BOUNDBOX', 0),
             ("Center Weighed", "Center Weighed", "Sample a grid of pixels and gives more weight to the ones near the center", 'CLIPUV_HLT', 1),
             ("Full Window", "Full Window", "Sample a grid of pixels among the whole window", 'FACESEL', 2),
             ],
-        description="Select an auto exposure metering mode",
-        default="Center Weighed"
+        description = "Select an auto exposure metering mode",
+        default = "Center Weighed"
         )
 
     ev_compensation : FloatProperty(
         name = "EV Compensation",
-        description = "Exposure Compensation value: add or subtract brightness",
+        description = "Exposure Compensation value: overexpose or lowerexpose the scene",
         min = -3,
         max = 3,
         step = 1,
@@ -467,6 +446,7 @@ register, unregister = bpy.utils.register_classes_factory(classes)
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    functions.register()
     bpy.types.Scene.camera_settings = bpy.props.PointerProperty(type=CameraSettings)
 
 
@@ -474,9 +454,10 @@ def register():
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
+    functions.unregister()
     del bpy.types.Scene.camera_settings
-    if handle is not None:
-        bpy.types.SpaceView3D.draw_handler_remove(handle, 'WINDOW')
+    # Remove draw handler if it exists
+    AUTOEXP_ae_toggle.remove_handler()
 
 
 if __name__ == "__main__":
