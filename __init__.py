@@ -118,24 +118,24 @@ class AUTOEXP_PT_Panel(Panel):
 
 def enable_camera(self, context):
 	settings = context.scene.camera_settings
-	name = context.active_object.name
+	camera = context.object.data
 	if settings.enabled:
 		# set limits
-		bpy.data.cameras[name].show_limits = True
+		camera.show_limits = True
 		# enable DOF
-		context.object.data.dof.use_dof = True
+		camera.dof.use_dof = True
 		# set camera size
-		bpy.context.object.data.display_size = 0.2
+		camera.display_size = 0.2
 		# set initial values
 		update_aperture(self, context)
 		update_shutter_speed(self, context)
 	else:
 		# disable DOF
-		context.object.data.dof.use_dof = False
+		camera.dof.use_dof = False
 		# disable limits
-		bpy.data.cameras[name].show_limits = False
+		camera.show_limits = False
 		# disable autofocus
-		bpy.context.scene.camera_settings.enable_af = False
+		context.scene.camera_settings.enable_af = False
 
 
 def update_aperture(self, context):
@@ -176,22 +176,21 @@ def autofocus_bake(self, context):
     steps = scene.camera_settings.af_step
     n = int(float(frames / steps))
     current_frame = scene.frame_current
-    name = context.active_object.name
-    cam = bpy.data.cameras[name]
+    camera = context.object.data
 
     if bake:
         scene.frame_current = start
         # every step frames, place a keyframe
         for i in range(n + 1):
             update_autofocus(self, context)
-            cam.dof.keyframe_insert('focus_distance')
+            camera.dof.keyframe_insert('focus_distance')
             scene.frame_set(scene.frame_current + steps)
         # current Frame
         scene.frame_current = current_frame
     else:
         # delete dof keyframes
         try:
-            fcurves = cam.animation_data.action.fcurves
+            fcurves = camera.animation_data.action.fcurves
         except AttributeError:
             pass
         else:
