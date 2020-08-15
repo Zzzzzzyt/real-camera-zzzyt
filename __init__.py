@@ -3,7 +3,7 @@ bl_info = {
     "name": "Real Camera",
     "description": "Physical camera controls",
     "author": "Wolf <wolf.art3d@gmail.com>",
-    "version": (3, 2),
+    "version": (3, 3),
     "blender": (2, 83, 0),
     "location": "View 3D > Properties Panel",
     "doc_url": "https://github.com/macio97/Real-Camera",
