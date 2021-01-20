@@ -1,30 +1,31 @@
-# Addon Info
+# Add-on Info
 bl_info = {
     "name": "Real Camera",
     "description": "Physical camera controls",
     "author": "Wolf <wolf.art3d@gmail.com>",
-    "version": (3, 3),
-    "blender": (2, 83, 0),
+    "version": (3, 4),
+    "blender": (2, 91, 0),
     "location": "View 3D > Properties Panel",
-    "doc_url": "https://github.com/macio97/Real-Camera",
-    "tracker_url": "https://github.com/macio97/Real-Camera/issues",
+    "doc_url": "https://github.com/marcopavanello/real-camera",
+    "tracker_url": "https://github.com/marcopavanello/real-camera/issues",
     "support": "COMMUNITY",
     "category": "Render",
     }
 
 
 # Libraries
-import bpy
-import bgl
-from math import ceil, log2, pow
+from math import log2, pow
 from mathutils import Vector
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
-from bpy.types import PropertyGroup, Panel, Operator
 from . import functions
 
+import bpy
+import bgl
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
+from bpy.types import Panel, PropertyGroup, Operator
 
-# Real Camera panel
-class REALCAMERA_PT_Panel(Panel):
+
+# Panel
+class REALCAMERA_PT_Camera(Panel):
     bl_category = "Real Camera"
     bl_label = "Real Camera"
     bl_space_type = 'PROPERTIES'
@@ -70,7 +71,7 @@ class REALCAMERA_PT_Panel(Panel):
 
 
 # Auto Exposure panel
-class AUTOEXP_PT_Panel(Panel):
+class REALCAMERA_PT_Exposure(Panel):
     bl_space_type = "PROPERTIES"
     bl_context = "render"
     bl_region_type = "WINDOW"
@@ -158,7 +159,7 @@ def update_autofocus(self, context):
         name = context.active_object.name
         obj = bpy.data.objects[name]
         # shoot ray from center of camera until it hits a mesh and calculate distance
-        ray = context.scene.ray_cast(context.scene.view_layers[0], obj.location, obj.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)))
+        ray = context.scene.ray_cast(context.window.view_layer.depsgraph, obj.location, obj.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)))
         distance = (ray[1] - obj.location).magnitude
         bpy.context.object.data.dof.focus_distance = distance
     else:
@@ -294,7 +295,7 @@ def auto_exposure():
                 bpy.context.scene.view_settings.exposure = exposure
 
 
-class AUTOEXP_ae_toggle:
+class AUTOEXP_OT_Toggle:
     bl_idname = "autoexp.toggle_ae"
     bl_label = "Enable AE"
     bl_description = "Enable Auto Exposure handler"
@@ -303,22 +304,22 @@ class AUTOEXP_ae_toggle:
 
     @staticmethod
     def add_handler():
-        if AUTOEXP_ae_toggle._handle is None:
-            AUTOEXP_ae_toggle._handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
+        if AUTOEXP_OT_Toggle._handle is None:
+            AUTOEXP_OT_Toggle._handle = bpy.types.SpaceView3D.draw_handler_add(auto_exposure, (), 'WINDOW', 'PRE_VIEW')
 
     @staticmethod
     def remove_handler():
-        if AUTOEXP_ae_toggle._handle is not None:
-            bpy.types.SpaceView3D.draw_handler_remove(AUTOEXP_ae_toggle._handle, 'WINDOW')
-            AUTOEXP_ae_toggle._handle = None
+        if AUTOEXP_OT_Toggle._handle is not None:
+            bpy.types.SpaceView3D.draw_handler_remove(AUTOEXP_OT_Toggle._handle, 'WINDOW')
+            AUTOEXP_OT_Toggle._handle = None
 
 
 def enable_auto_exposure(self, context):
     ae = context.scene.camera_settings.enable_ae
     if ae:
-        AUTOEXP_ae_toggle.add_handler()
+        AUTOEXP_OT_Toggle.add_handler()
     else:
-        AUTOEXP_ae_toggle.remove_handler()
+        AUTOEXP_OT_Toggle.remove_handler()
 
 
 class CameraSettings(PropertyGroup):
@@ -424,8 +425,8 @@ class CameraSettings(PropertyGroup):
 
 ############################################################################
 classes = (
-    REALCAMERA_PT_Panel,
-    AUTOEXP_PT_Panel,
+    REALCAMERA_PT_Camera,
+    REALCAMERA_PT_Exposure,
     CameraSettings
     )
 
@@ -447,7 +448,7 @@ def unregister():
     functions.unregister()
     del bpy.types.Scene.camera_settings
     # Remove draw handler if it exists
-    AUTOEXP_ae_toggle.remove_handler()
+    AUTOEXP_OT_Toggle.remove_handler()
 
 
 if __name__ == "__main__":
