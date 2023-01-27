@@ -10,8 +10,8 @@ from math import log2, pow
 bl_info = {
     "name": "Real Camera (Zzzyt fork)",
     "description": "Physical camera controls",
-    "author": "Zzzyt <zzzyt205@gmail.com>",
-    "version": (3, 4),
+    "author": "Wolf <wolf.art3d@gmail.com>, Zzzyt",
+    "version": (3, 5),
     "blender": (2, 91, 0),
     "location": "View 3D > Properties Panel",
     "doc_url": "https://github.com/Zzzzzzyt/real-camera-zzzyt",
