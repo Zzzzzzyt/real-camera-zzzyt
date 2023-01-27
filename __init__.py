@@ -1,13 +1,13 @@
 # Add-on Info
 bl_info = {
-    "name": "Real Camera",
+    "name": "Real Camera (Zzzyt fork)",
     "description": "Physical camera controls",
-    "author": "Wolf <wolf.art3d@gmail.com>",
+    "author": "Zzzyt <zzzyt205@gmail.com>",
     "version": (3, 4),
     "blender": (2, 91, 0),
     "location": "View 3D > Properties Panel",
-    "doc_url": "https://github.com/marcopavanello/real-camera",
-    "tracker_url": "https://github.com/marcopavanello/real-camera/issues",
+    "doc_url": "https://github.com/Zzzzzzyt/real-camera-zzzyt",
+    "tracker_url": "https://github.com/Zzzzzzyt/real-camera-zzzyt/issues",
     "support": "COMMUNITY",
     "category": "Render",
     }
@@ -223,16 +223,19 @@ def auto_exposure():
         # Full Window
         if settings.ae_mode == "Full Window":
             grid = settings.full_grid
-            values = 0
+            values = []
             step = 1 / (grid + 1)
-            for i in range (grid):
-                for j in range (grid):
+            for i in range(grid):
+                for j in range(grid):
                     x = int(step * (j + 1) * width)
                     y = int(step * (i + 1) * height)
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
-                    values = values + lum
-            average = values / (grid * grid)
+                    values.append(lum)
+            values.sort()
+            if len(values) > 5:
+                values = values[2:-2]
+            average = sum(values) / len(values)
 
         # Center Weighed
         if settings.ae_mode == "Center Weighed":
@@ -240,37 +243,40 @@ def auto_exposure():
             max = width if width >= height else height
             half = max // 2
             step = max // (circles * 2 + 2)
-            values = 0
-            weights = 0
-            for i in range (circles):
+            res = []
+            for i in range(circles):
                 x = half - (i + 1) * step
                 y = x
                 n_steps = i * 2 + 2
                 weight = (circles - 1 - i) / circles
-                for n in range (n_steps):
+                for n in range(n_steps):
                     x = x + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
-                    values = values + lum * weight
-                    weights = weights + weight
-                for n in range (n_steps):
+                    res.append((lum, lum*weight, weight))
+                for n in range(n_steps):
                     y = y + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
-                    values = values + lum * weight
-                    weights = weights + weight
-                for n in range (n_steps):
+                    res.append((lum, lum*weight, weight))
+                for n in range(n_steps):
                     x = x - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
-                    values = values + lum * weight
-                    weights = weights + weight
-                for n in range (n_steps):
+                    res.append((lum, lum*weight, weight))
+                for n in range(n_steps):
                     y = y - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
-                    values = values + lum * weight
-                    weights = weights + weight
+                    res.append((lum, lum*weight, weight))
+            res.sort()
+            if len(res) > 5:
+                res = res[2:-2]
+            values = 0
+            weights = 0
+            for i in res:
+                values += i[1]
+                weights += i[2]
             average = values / weights
 
         # expose scene based on average
