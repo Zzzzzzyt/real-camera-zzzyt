@@ -1,4 +1,12 @@
-# Add-on Info
+from bpy.types import Panel, PropertyGroup, Operator
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
+import bgl
+import bpy
+from . import functions
+from mathutils import Vector
+from math import log2, pow
+
+
 bl_info = {
     "name": "Real Camera (Zzzyt fork)",
     "description": "Physical camera controls",
@@ -10,21 +18,11 @@ bl_info = {
     "tracker_url": "https://github.com/Zzzzzzyt/real-camera-zzzyt/issues",
     "support": "COMMUNITY",
     "category": "Render",
-    }
-
-
-# Libraries
-from math import log2, pow
-from mathutils import Vector
-from . import functions
-
-import bpy
-import bgl
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
-from bpy.types import Panel, PropertyGroup, Operator
-
+}
 
 # Panel
+
+
 class REALCAMERA_PT_Camera(Panel):
     bl_category = "Real Camera"
     bl_label = "Real Camera"
@@ -110,33 +108,36 @@ class REALCAMERA_PT_Exposure(Panel):
         layout.use_property_decorate = False
         flow = layout.grid_flow(row_major=True, columns=0, even_columns=False, even_rows=False, align=True)
         col = flow.column()
+        col.prop(settings, 'min_exposure', slider=True)
+        col.prop(settings, 'max_exposure', slider=True)
+        col.prop(settings, 'lum_threshold')
         col.prop(settings, 'ev_compensation', slider=True)
-        if settings.ae_mode=="Center Weighed":
+        if settings.ae_mode == "Center Weighed":
             col.prop(settings, 'center_grid')
-        if settings.ae_mode=="Full Window":
+        if settings.ae_mode == "Full Window":
             col.prop(settings, 'full_grid')
 
 
 def enable_camera(self, context):
-	settings = context.scene.camera_settings
-	camera = context.object.data
-	if settings.enabled:
-		# set limits
-		camera.show_limits = True
-		# enable DOF
-		camera.dof.use_dof = True
-		# set camera size
-		camera.display_size = 0.2
-		# set initial values
-		update_aperture(self, context)
-		update_shutter_speed(self, context)
-	else:
-		# disable DOF
-		camera.dof.use_dof = False
-		# disable limits
-		camera.show_limits = False
-		# disable autofocus
-		context.scene.camera_settings.enable_af = False
+    settings = context.scene.camera_settings
+    camera = context.object.data
+    if settings.enabled:
+        # set limits
+        camera.show_limits = True
+        # enable DOF
+        camera.dof.use_dof = True
+        # set camera size
+        camera.display_size = 0.2
+        # set initial values
+        update_aperture(self, context)
+        update_shutter_speed(self, context)
+    else:
+        # disable DOF
+        camera.dof.use_dof = False
+        # disable limits
+        camera.show_limits = False
+        # disable autofocus
+        context.scene.camera_settings.enable_af = False
 
 
 def update_aperture(self, context):
@@ -213,12 +214,14 @@ def auto_exposure():
         height = viewport[3]
         buf = bgl.Buffer(bgl.GL_FLOAT, 3)
 
+        max_lum = settings.lum_threshold
+
+        bgl.glReadPixels(width//2, height//2, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
+        average = functions.rgb_to_luminance(buf)
+
         # Center Spot
-        if settings.ae_mode=="Center Spot":
-            x = width // 2
-            y = height // 2
-            bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
-            average = functions.rgb_to_luminance(buf)
+        if settings.ae_mode == "Center Spot":
+            pass
 
         # Full Window
         if settings.ae_mode == "Full Window":
@@ -231,18 +234,21 @@ def auto_exposure():
                     y = int(step * (i + 1) * height)
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
+                    if lum > max_lum:
+                        continue
                     values.append(lum)
             values.sort()
             if len(values) > 5:
                 values = values[2:-2]
-            average = sum(values) / len(values)
+            if len(values) > 0:
+                average = sum(values) / len(values)
 
         # Center Weighed
         if settings.ae_mode == "Center Weighed":
             circles = settings.center_grid
-            max = width if width >= height else height
-            half = max // 2
-            step = max // (circles * 2 + 2)
+            maxx = width if width >= height else height
+            half = maxx // 2
+            step = maxx // (circles * 2 + 2)
             res = []
             for i in range(circles):
                 x = half - (i + 1) * step
@@ -253,36 +259,48 @@ def auto_exposure():
                     x = x + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
+                    if lum > max_lum:
+                        continue
                     res.append((lum, lum*weight, weight))
                 for n in range(n_steps):
                     y = y + step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
+                    if lum > max_lum:
+                        continue
                     res.append((lum, lum*weight, weight))
                 for n in range(n_steps):
                     x = x - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
+                    if lum > max_lum:
+                        continue
                     res.append((lum, lum*weight, weight))
                 for n in range(n_steps):
                     y = y - step
                     bgl.glReadPixels(x, y, 1, 1, bgl.GL_RGB, bgl.GL_FLOAT, buf)
                     lum = functions.rgb_to_luminance(buf)
+                    if lum > max_lum:
+                        continue
                     res.append((lum, lum*weight, weight))
             res.sort()
+            open('D:/test.txt', 'w', encoding='utf-8').write(str(res))
             if len(res) > 5:
                 res = res[2:-2]
             values = 0
             weights = 0
-            for i in res:
-                values += i[1]
-                weights += i[2]
-            average = values / weights
+            if len(res) > 0:
+                for i in res:
+                    values += i[1]
+                    weights += i[2]
+                average = values/weights
 
         # expose scene based on average
         if average > 0:
             actual_exposure = bpy.context.scene.view_settings.exposure
-            ev_compensation = bpy.context.scene.camera_settings.ev_compensation
+            ev_compensation = settings.ev_compensation
+            min_exposure = settings.min_exposure
+            max_exposure = settings.max_exposure
             # current
             scene_exposed = average * pow(2, actual_exposure)
             log = (log2(scene_exposed / 0.18) + 10) / 16.5
@@ -298,6 +316,7 @@ def auto_exposure():
             if not (display > avg_min and display < avg_max):
                 future = -log2(average / middle_gray)
                 exposure = actual_exposure - (actual_exposure - future) / 5
+                exposure = max(min(exposure, max_exposure), min_exposure)
                 bpy.context.scene.view_settings.exposure = exposure
 
 
@@ -330,103 +349,129 @@ def enable_auto_exposure(self, context):
 
 class CameraSettings(PropertyGroup):
     # Enable
-    enabled : BoolProperty(
-        name = "Real Camera",
-        description = "Enable Real Camera",
-        default = False,
-        update = enable_camera
-        )
+    enabled: BoolProperty(
+        name="Real Camera",
+        description="Enable Real Camera",
+        default=False,
+        update=enable_camera
+    )
 
     # Exposure Triangle
-    aperture : FloatProperty(
-        name = "Aperture",
-        description = "Aperture of the lens in f-stops. From 0.1 to 64. Gives a depth of field effect",
-        min = 0.1,
-        max = 64,
-        step = 1,
-        precision = 2,
-        default = 5.6,
-        update = update_aperture
-        )
+    aperture: FloatProperty(
+        name="Aperture",
+        description="Aperture of the lens in f-stops. From 0.1 to 64. Gives a depth of field effect",
+        min=0.1,
+        max=64,
+        step=1,
+        precision=2,
+        default=5.6,
+        update=update_aperture
+    )
 
-    shutter_speed : FloatProperty(
-        name = "Shutter Speed",
-        description = "Exposure time of the sensor in seconds. From 1/10000 to 10. Gives a motion blur effect",
-        min = 0.0001,
-        max = 100,
-        step = 10,
-        precision = 4,
-        default = 0.5,
-        update = update_shutter_speed
-        )
+    shutter_speed: FloatProperty(
+        name="Shutter Speed",
+        description="Exposure time of the sensor in seconds. From 1/10000 to 10. Gives a motion blur effect",
+        min=0.0001,
+        max=100,
+        step=10,
+        precision=4,
+        default=0.5,
+        update=update_shutter_speed
+    )
 
     # Mechanics
-    enable_af : BoolProperty(
-        name = "Autofocus",
-        description = "Enable Autofocus",
-        default = False,
-        update = update_autofocus
-        )
+    enable_af: BoolProperty(
+        name="Autofocus",
+        description="Enable Autofocus",
+        default=False,
+        update=update_autofocus
+    )
 
-    af_bake : BoolProperty(
-        name = "Autofocus Baking",
-        description = "Bake Autofocus for the entire animation",
-        default = False,
-        update = autofocus_bake
-        )
+    af_bake: BoolProperty(
+        name="Autofocus Baking",
+        description="Bake Autofocus for the entire animation",
+        default=False,
+        update=autofocus_bake
+    )
 
-    af_step : IntProperty(
-        name = "Step",
-        description = "Every step frames insert a keyframe",
-        min = 1,
-        max = 10000,
-        default = 24
-        )
+    af_step: IntProperty(
+        name="Step",
+        description="Every step frames insert a keyframe",
+        min=1,
+        max=10000,
+        default=24
+    )
 
     # Auto Exposure
-    enable_ae : BoolProperty(
-        name = "Auto Exposure",
-        description = "Enable Auto Exposure",
-        default = False,
-        update = enable_auto_exposure
-        )
+    enable_ae: BoolProperty(
+        name="Auto Exposure",
+        description="Enable Auto Exposure",
+        default=False,
+        update=enable_auto_exposure
+    )
 
-    ae_mode : EnumProperty(
-        name = "Mode",
-        items = [
+    ae_mode: EnumProperty(
+        name="Mode",
+        items=[
             ("Center Spot", "Center Spot", "Sample the pixel in the center of the window", 'PIVOT_BOUNDBOX', 0),
             ("Center Weighed", "Center Weighed", "Sample a grid of pixels and gives more weight to the ones near the center", 'CLIPUV_HLT', 1),
             ("Full Window", "Full Window", "Sample a grid of pixels among the whole window", 'FACESEL', 2),
-            ],
-        description = "Select an auto exposure metering mode",
-        default = "Center Weighed"
-        )
+        ],
+        description="Select an auto exposure metering mode",
+        default="Center Weighed"
+    )
 
-    ev_compensation : FloatProperty(
-        name = "EV Compensation",
-        description = "Exposure Compensation value: overexpose or lowerexpose the scene",
-        min = -3,
-        max = 3,
-        step = 1,
-        precision = 2,
-        default = 0
-        )
+    min_exposure: FloatProperty(
+        name="Minimum Exposure",
+        description="Minimum Exposure",
+        soft_min=-32,
+        soft_max=32,
+        step=1,
+        precision=1,
+        default=-20
+    )
 
-    center_grid : IntProperty(
-        name = "Circles",
-        description = "Number of circles to sample: more circles means more accurate auto exposure, but also means slower viewport",
-        min = 2,
-        max = 20,
-        default = 4
-        )
+    max_exposure: FloatProperty(
+        name="Maximum Exposure",
+        description="Maximum Exposure",
+        soft_min=-32,
+        soft_max=32,
+        step=1,
+        precision=1,
+        default=20
+    )
 
-    full_grid : IntProperty(
-        name = "Grid",
-        description = "Number of rows and columns to sample: more rows and columns means more accurate auto exposure, but also means slower viewport",
-        min = 2,
-        max = 20,
-        default = 7
-        )
+    lum_threshold: FloatProperty(
+        name="Luminance Threshold",
+        description="Luminance Threshold: pixel with luminance greater than this value will be ignored",
+        default=100
+    )
+
+    ev_compensation: FloatProperty(
+        name="EV Compensation",
+        description="Exposure Compensation value: overexpose or lowerexpose the scene",
+        min=-3,
+        max=3,
+        step=1,
+        precision=2,
+        default=0
+    )
+
+    center_grid: IntProperty(
+        name="Circles",
+        description="Number of circles to sample: more circles means more accurate auto exposure, but also means slower viewport",
+        min=2,
+        max=20,
+        default=4
+    )
+
+    full_grid: IntProperty(
+        name="Grid",
+        description="Number of rows and columns to sample: more rows and columns means more accurate auto exposure, but also means slower viewport",
+        min=2,
+        max=20,
+        default=7
+    )
 
 
 ############################################################################
@@ -434,7 +479,7 @@ classes = (
     REALCAMERA_PT_Camera,
     REALCAMERA_PT_Exposure,
     CameraSettings
-    )
+)
 
 register, unregister = bpy.utils.register_classes_factory(classes)
 
