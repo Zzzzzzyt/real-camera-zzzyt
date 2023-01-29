@@ -450,8 +450,8 @@ class CameraSettings(PropertyGroup):
     ev_compensation: FloatProperty(
         name="EV Compensation",
         description="Exposure Compensation value: overexpose or lowerexpose the scene",
-        min=-3,
-        max=3,
+        soft_min=-3,
+        soft_max=3,
         step=1,
         precision=2,
         default=0
@@ -460,16 +460,16 @@ class CameraSettings(PropertyGroup):
     center_grid: IntProperty(
         name="Circles",
         description="Number of circles to sample: more circles means more accurate auto exposure, but also means slower viewport",
-        min=2,
-        max=20,
+        soft_min=2,
+        soft_max=20,
         default=4
     )
 
     full_grid: IntProperty(
         name="Grid",
         description="Number of rows and columns to sample: more rows and columns means more accurate auto exposure, but also means slower viewport",
-        min=2,
-        max=20,
+        soft_min=2,
+        soft_max=20,
         default=7
     )
 
